@@ -63,6 +63,7 @@ How GPU hardware and AI frameworks expose tensor operations, memory transfers, a
 | [nvidia-nsight.md](03-hardware-accelerators/nvidia-nsight.md) | NVIDIA Nsight Systems/Compute | System-wide timeline + per-kernel hardware counters via CUPTI |
 | [amd-rocprofiler.md](03-hardware-accelerators/amd-rocprofiler.md) | AMD roctracer/rocprofiler | Open-source GPU profiling: HIP/HSA API tracing, Matrix Core counters |
 | [pytorch-profiler.md](03-hardware-accelerators/pytorch-profiler.md) | PyTorch Profiler | Framework-level: Python ops → ATen → GPU kernels; Chrome Trace output |
+| [processor-tracing.md](03-hardware-accelerators/processor-tracing.md) | Intel PT / ARM ETM / AMD IBS | Hardware instruction-level tracing: <5% overhead, deterministic replay, full call-graph recovery |
 
 ### 04 — Network
 
@@ -85,6 +86,12 @@ How AI agents expose their runtime behavior — the application-level telemetry 
 | [AAIF-REF-ARCH-TMLL.md](05-ai-agent-observability/AAIF-REF-ARCH-TMLL.md) | TMLL | ML-enhanced trace analysis via TSP; MCP server exposes anomaly detection to AI agents |
 | [AAIF-REF-ARCH-OTEL.md](05-ai-agent-observability/AAIF-REF-ARCH-OTEL.md) | OpenTelemetry | Vendor-neutral observability framework: traces, metrics, logs with gen_ai.* semantic conventions |
 | [AAIF-REF-ARCH-DATADOG.md](05-ai-agent-observability/AAIF-REF-ARCH-DATADOG.md) | Datadog | Full-stack SaaS platform: LLM Observability with agent/workflow/tool/llm span types |
+
+## Cross-Cutting
+
+| Document | Subject | Key Insight |
+|----------|---------|-------------|
+| [best-practices.md](best-practices.md) | AAIF Tracing Best Practices | Practitioner's guide synthesized from the full collection: trace encoding through AI agent observability |
 
 ## Reading Order
 
