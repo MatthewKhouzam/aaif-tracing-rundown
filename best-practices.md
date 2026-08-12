@@ -1,4 +1,4 @@
-# AAIF Tracing Ecosystem — Best Practices
+# AAIF Tracing Ecosystem - Best Practices
 
 A practitioner's guide synthesized from the full AAIF reference architecture collection, covering trace encoding through AI agent observability.
 
@@ -8,7 +8,7 @@ The AAIF tracing ecosystem is a layered stack. Each layer builds on the one belo
 
 ```mermaid
 graph TB
-    subgraph L5["05 — AI Agent Observability"]
+    subgraph L5["05 - AI Agent Observability"]
         OTEL[OpenTelemetry]
         LANG[Langfuse]
         POST[PostHog]
@@ -18,26 +18,26 @@ graph TB
         AT[Agent Trace]
     end
 
-    subgraph L4["04 — Network"]
+    subgraph L4["04 - Network"]
         WIRE[Wireshark / TShark]
         PCAP[PCAPNG Capture]
     end
 
-    subgraph L3["03 — Hardware Accelerators"]
+    subgraph L3["03 - Hardware Accelerators"]
         NSIGHT[Nsight Systems/Compute]
         ROCPROF[roctracer / rocprof]
         PYTORCH[PyTorch Profiler]
         DCGM[DCGM / rocm-smi]
     end
 
-    subgraph L2["02 — Kernel Tracing"]
+    subgraph L2["02 - Kernel Tracing"]
         LTTNG[LTTng kernel + UST]
         PERF[perf]
         FTRACE[FTrace]
         DRIVER[Driver Tracing]
     end
 
-    subgraph L1["01 — Foundations"]
+    subgraph L1["01 - Foundations"]
         CTF[Common Trace Format]
         TC[Trace Compass]
     end
@@ -107,9 +107,9 @@ Every instrumentation point must cost nothing when not actively collected:
 
 All high-performance tracing uses per-CPU (kernel) or per-thread (userspace) ring buffers:
 
-- Atomic CAS for slot reservation — no locks, no priority inversion
-- Each CPU/thread writes independently — no cross-core contention
-- Consumer reads asynchronously — never blocks producer
+- Atomic CAS for slot reservation - no locks, no priority inversion
+- Each CPU/thread writes independently - no cross-core contention
+- Consumer reads asynchronously - never blocks producer
 - Bounded memory with explicit discard counting
 
 ### 3. Binary Formats for Production
@@ -173,6 +173,9 @@ flowchart TD
     START -->|Vendor-neutral telemetry| OTEL[OpenTelemetry]
     START -->|Cross-layer correlation| TC[Trace Compass]
     START -->|AI-assisted trace analysis| TMLL[TMLL via MCP]
+    START -->|VM pre-emption / stolen time| KVM[perf kvm stat + sched tracepoints]
+    START -->|Container throttling / scheduling| CGROUP[cpu.stat + bpftrace cgroup filter]
+    START -->|Agent telemetry pub/sub| MQTT[MQTT 5.0 broker]
 
     PERF -->|Need call stacks| DWARF["--call-graph dwarf"]
     PERF -->|Low overhead| FP["--call-graph fp"]
@@ -202,6 +205,10 @@ flowchart TD
 | LLM trace hierarchy | Langfuse / Datadog | <1% (async) | Fire-and-forget batched |
 | Cross-service distributed trace | OpenTelemetry | 1-3% | W3C Trace Context |
 | Multi-source correlation | Trace Compass | Analysis-time only | Reads CTF, perf, JSON, pcap |
+| VM pre-emption analysis | `perf kvm stat` + `sched_switch` | <1% host | Correlate stolen time with guest traces |
+| Container throttling detection | `cpu.stat` + bpftrace | <1% | cgroup-filtered scheduling events |
+| Agent telemetry fan-out | MQTT 5.0 (QoS 0) | 2-byte wire overhead | Persistent connections, broker-mediated |
+| Agent presence / command dispatch | MQTT 5.0 (QoS 1) | Minimal | Will messages + retained status |
 
 ---
 
@@ -214,12 +221,12 @@ flowchart TD
 - Use instances (`/sys/kernel/tracing/instances/<name>/`) for concurrent sessions
 - Use in-kernel histograms (`hist:keys=<field>`) for zero-export aggregation
 - Use `function_graph` tracer with `set_graph_function` for targeted call trees
-- Use as first-responder tool — works in degraded states, no daemon dependency
+- Use as first-responder tool - works in degraded states, no daemon dependency
 
 **Don't:**
 - Enable unfiltered function tracing in production (massive overhead)
 - Leave tracing enabled after debugging (`echo nop > current_tracer`)
-- Use text output for automated pipelines — it truncates and is ambiguous
+- Use text output for automated pipelines - it truncates and is ambiguous
 - Confuse `trace` (snapshot, repeatable) with `trace_pipe` (consuming, one-time)
 
 ### perf
@@ -233,9 +240,9 @@ flowchart TD
 
 **Don't:**
 - Assume sampled values are exact (they're statistical estimates)
-- Ignore `(XX.XX%)` annotations — they indicate PMU multiplexing/extrapolation
+- Ignore `(XX.XX%)` annotations - they indicate PMU multiplexing/extrapolation
 - Run Intel PT without size limits (60–600 MB/sec)
-- Forget debug symbols — you'll get addresses instead of function names
+- Forget debug symbols - you'll get addresses instead of function names
 
 ### LTTng (Kernel + UST)
 
@@ -245,13 +252,13 @@ flowchart TD
 - Size buffers for workload: 4×1 MB minimum for production kernel tracing
 - Always add context: `pid`, `tid`, `procname`, `perf:cpu:cycles`
 - Use `per-uid` buffer mode for crash resilience (UST)
-- Tunnel `lttng-relayd` over SSH/VPN — no built-in encryption
+- Tunnel `lttng-relayd` over SSH/VPN - no built-in encryption
 
 **Don't:**
 - Use default 16 KB UST buffers in production (will discard under any load)
 - Rely on session daemon without supervision (systemd auto-restart)
 - Ignore disk space during long recordings (use triggers for rotation)
-- Assume distributed trace propagation exists (it doesn't — manual correlation only)
+- Assume distributed trace propagation exists (it doesn't - manual correlation only)
 
 ### Driver Tracing Escalation Path
 
@@ -276,6 +283,78 @@ flowchart TD
     style G fill:#FF6347
 ```
 
+
+### Virtualization Tracing
+
+Hypervisors insert a scheduling layer that fundamentally distorts guest-side timestamps. vCPU pre-emption creates invisible time gaps in guest traces.
+
+**Do:**
+- Pin vCPUs to physical cores (`virsh vcpupin`) for timing-sensitive tracing
+- Use `perf kvm stat` for zero-setup exit-reason analysis
+- Record `kvm:kvm_exit` + `sched:sched_switch` together to correlate pre-emption with exit events
+- Check `%steal` in guest (`mpstat -P ALL 1`) before trusting guest-side latency numbers
+- Use `kvmclock` (default) for wall-clock-aware guest timestamps
+- Use SCHED_FIFO (`chrt -f -p 99`) for vCPU threads when trace accuracy matters
+- Monitor `kvm_halt_poll_ns` to understand wakeup latency trade-offs
+
+**Don't:**
+- Trust guest-side latency measurements without verifying `%steal == 0`
+- Assume guest hardware counters reflect true CPU behavior (PMU stops during pre-emption)
+- Run timing-sensitive traces in nested virtualization (double-steal has no correction)
+- Forget that `cycles != wall_time * frequency` inside VMs
+- Ignore VFIO passthrough blind spots (host loses device visibility once guest owns IOMMU mapping)
+- Compare traces from VMs without checking clock source consistency
+
+**Key insight**: Host-side tracing shows ground truth. Guest traces are systematically distorted by pre-emption. Always correlate guest measurements with host scheduler tracepoints.
+
+| Scenario | What to Trace | Where |
+|----------|--------------|-------|
+| Latency spike investigation | `kvm_exit` + `sched_switch` (QEMU PIDs) | Host |
+| Exit reason profiling | `perf kvm stat live` | Host |
+| Stolen time quantification | `mpstat %steal` + host `sched_switch` | Both |
+| VFIO device performance | Guest-side CUPTI/rocprof (native accuracy) | Guest |
+| Halt/wakeup latency | `kvm_halt_poll_ns` + `kvm_vcpu_wakeup` | Host |
+
+### Container Orchestration Tracing
+
+CFS throttling and cgroup bandwidth limits create timing gaps invisible to application traces. Scheduler tracepoints expose the truth.
+
+**Do:**
+- Monitor `cpu.stat` (`nr_throttled`, `throttled_usec`) for every latency-sensitive container
+- Use `sched_stat_wait` tracepoints to detect noisy-neighbor runqueue contention
+- Filter traces by cgroup ID (perf `--cgroup`, bpftrace `cgroup == cgroupid(...)`)
+- Set `requests == limits` (Guaranteed QoS) for containers that need timing accuracy
+- Use CPU Manager static policy (`--cpu-manager-policy=static`) for exclusive CPU pinning
+- Correlate wall-clock span durations with `sched_stat_runtime` to compute scheduling overhead
+- Use Inspektor Gadget for Kubernetes-native BPF tracing without host access
+
+**Don't:**
+- Trust application-level span durations without checking for CFS throttling (100ms gaps per period)
+- Assume stable latency in Burstable QoS class (variable with neighbor activity)
+- Ignore memory pressure (`memory.pressure`, `memory.events`) as a source of syscall latency spikes
+- Mount tracefs into containers without understanding the security implications
+- Forget that pod pre-emption/eviction truncates all in-flight traces if not flushed externally
+- Compare latency across pods without accounting for different cgroup bandwidth limits
+
+**Key insight**: Application-level spans (OpenTelemetry, Langfuse) report wall-clock time that INCLUDES all scheduling distortion. A 100ms span might be 5ms of computation + 95ms of CFS throttle. Only kernel tracepoints can decompose wall-clock into CPU-time vs throttle vs runqueue-wait.
+
+| Problem | What to Check | How |
+|---------|--------------|-----|
+| Unexplained latency spikes | CFS throttling | `cat cpu.stat \| grep nr_throttled` |
+| Variable latency under load | Noisy neighbor | `bpftrace sched_stat_wait` filtered by cgroup |
+| Pod startup slow | Scheduling + image pull | kubelet OTel spans + containerd events |
+| Memory-related hangs | Direct reclaim | `memory.pressure` + `vmscan:*` tracepoints |
+| Network latency between pods | Namespace overhead | `net:net_dev_xmit` with netns context |
+
+```bash
+# Quick container throttling check
+for cg in /sys/fs/cgroup/kubepods.slice/*/*/cpu.stat; do
+    throttled=$(grep nr_throttled "$cg" | awk '{print $2}')
+    if [ "$throttled" -gt 0 ]; then
+        echo "$cg: throttled $throttled times"
+    fi
+done
+```
 
 ---
 
@@ -342,7 +421,7 @@ with torch.profiler.profile(
 
 ### NVTX/ROCTX Annotation Convention
 
-Always annotate training phases — near-zero cost, activates only when profiler collects:
+Always annotate training phases - near-zero cost, activates only when profiler collects:
 
 ```python
 # Standard annotation structure
@@ -475,10 +554,66 @@ SSLKEYLOGFILE=/tmp/keys.log tshark -i eth0 -o tls.keylog_file:/tmp/keys.log
 
 ### Network Pitfalls
 
-- PCAPNG files contain unredacted PII, passwords, tokens — treat as sensitive
-- TShark dissection is single-threaded — won't scale for high-volume continuous capture
-- Heuristic dissectors can misidentify protocols — validate with display filters
+- PCAPNG files contain unredacted PII, passwords, tokens - treat as sensitive
+- TShark dissection is single-threaded - won't scale for high-volume continuous capture
+- Heuristic dissectors can misidentify protocols - validate with display filters
 - Capture files grow unbounded without ring buffer mode
+
+### MQTT for Agent Telemetry
+
+MQTT provides lightweight pub/sub messaging with minimal wire overhead (2-byte fixed header for QoS 0). Well-suited for high-fan-out agent telemetry, presence detection, and command dispatch.
+
+**Do:**
+- Use QoS 0 for high-frequency metrics (tokens/s, GPU utilization) where occasional loss is acceptable
+- Use QoS 1 for important events (agent status changes, error reports) that need at-least-once delivery
+- Reserve QoS 2 for critical control messages only (expensive 4-packet handshake)
+- Design topic hierarchies for both specific addressing and wildcard monitoring: `agents/{id}/telemetry` + subscribe `agents/+/telemetry/#`
+- Use retained messages for agent status topics (new subscribers get last known state immediately)
+- Use shared subscriptions (`$share/group/topic`) to load-balance telemetry processing across consumers
+- Set `message_expiry_interval` on telemetry publishes to prevent stale data delivery to reconnecting subscribers
+- Use Will messages for ungraceful disconnect detection (automatic presence management)
+- Use MQTT 5.0 user properties to carry trace correlation IDs without modifying payloads
+- Enable TLS 1.2+ for all production broker connections; use mTLS for device/agent identity
+- Use topic aliases (MQTT 5.0) to reduce per-message wire overhead on frequently-published topics
+
+**Don't:**
+- Use QoS 2 at scale for telemetry (4-step handshake per message kills throughput)
+- Create unbounded topic namespaces (millions of unique topics degrades broker routing)
+- Rely on the broker for message replay or event sourcing (broker is a router, not a store)
+- Trust ordering across multiple publishers to the same topic (only per-client ordering guaranteed)
+- Store secrets or model weights in MQTT payloads without application-layer encryption (broker sees plaintext)
+- Ignore persistent session queue depth for offline agents (unbounded queues cause broker OOM)
+- Skip keep-alive configuration (dead connections consume broker resources indefinitely)
+
+**Topic namespace pattern for AI agent infrastructure:**
+
+```
+agents/
+  {agent-id}/
+    telemetry          # QoS 0, high frequency, not retained
+    status             # QoS 1, retained (online/offline/degraded)
+    commands           # QoS 1, inbound control messages
+    responses          # QoS 1, command acknowledgments
+  orchestrator/
+    assignments        # Task routing decisions
+    scaling            # Autoscaler events
+```
+
+**MQTT vs alternatives for agent telemetry:**
+
+| Need | MQTT | HTTP/REST | gRPC |
+|------|------|-----------|------|
+| High-frequency metrics (100+ agents) | QoS 0, 2-byte overhead, persistent conn | Per-request overhead, connection churn | Streaming works but heavier framing |
+| Presence detection | Will messages + retained status (built-in) | Requires heartbeat polling | Requires keep-alive implementation |
+| Fan-out to N consumers | Broker handles routing, zero publisher knowledge | N requests or webhook infrastructure | Requires pub/sub layer on top |
+| Edge/constrained devices | Designed for this (MCU to cloud on same protocol) | Heavy headers, TLS handshake per request | Protobuf helps but HTTP/2 is heavy |
+| Command dispatch | Subscribe to `agents/{id}/commands` | Poll or WebSocket | Bidirectional streaming works |
+
+**Broker observability:**
+- Subscribe to `$SYS/broker/#` for self-monitoring via MQTT itself
+- Export Prometheus metrics from broker (Mosquitto exporter, EMQX native, HiveMQ plugin)
+- Monitor `$SYS/broker/clients/connected` for fleet size tracking
+- Set alerts on message delivery latency and subscription count growth
 
 ---
 
@@ -595,7 +730,7 @@ flowchart LR
 - Strip PII at the emission boundary, not the storage boundary
 - Use anonymous installation IDs (UUID v4), never human-identifiable info
 - Drop property keys containing: `secret`, `password`, `credential`, `key`, `token`
-- Explicit opt-in required — never silent collection
+- Explicit opt-in required - never silent collection
 - Never transmit conversation content, file content, or tool output in analytics
 
 ### Agent Security Scanning
@@ -620,7 +755,7 @@ flowchart TD
 **Rules:**
 - Enable `SECURITY_PROMPT_ENABLED=true` in all non-development environments
 - Dual-mode scanning (fast patterns + slower ML) balances latency with accuracy
-- MCP extensions execute with full user privileges by default — consider container isolation for untrusted extensions
+- MCP extensions execute with full user privileges by default - consider container isolation for untrusted extensions
 - Implement content redaction processor before any telemetry export
 
 
@@ -965,7 +1100,7 @@ flowchart TD
 | Tracing everything at all times | System slowdown, disk exhaustion, noise | Layered: always-on (low-overhead) + triggered deep capture |
 | Fire-and-forget telemetry with no retry | Permanent data loss on transient failures | Exponential backoff + local WAL buffer |
 | Unbounded batch buffers | Memory exhaustion when backend is slow | Max buffer size with oldest-event eviction |
-| Head sampling for AI workloads | Errors are rare but critical — missed by head sampling | Tail sampling (hold until decision) or always-sample errors |
+| Head sampling for AI workloads | Errors are rare but critical - missed by head sampling | Tail sampling (hold until decision) or always-sample errors |
 | Single telemetry sink | One backend failure = complete blindness | Triple pipeline (OTel + LLM-specific + analytics) |
 | Text parsing for production trace analysis | Truncation, ambiguity, parsing overhead | Binary formats (CTF, perf.data, protobuf) |
 | Profiling without `schedule()` bounds | Multi-GB trace files, overhead distorts results | Wait → warmup → active → repeat pattern |
@@ -1040,7 +1175,7 @@ Every technology in this stack is assessed across these dimensions:
 | **Reliability** | Strong | Moderate | Strong | Moderate | Agent telemetry fire-and-forget losses |
 | **Accuracy** | Strong | Moderate | Strong | Moderate | Token counts approximate; clock skew |
 
-**The universal takeaway**: Observability is strong across all layers. Security and identity are systematically weak — compensating controls (encryption, access control, audit logging) must be layered on externally. Reliability degrades as you move up the stack from kernel (deterministic capture) to agent (best-effort async export).
+**The universal takeaway**: Observability is strong across all layers. Security and identity are systematically weak - compensating controls (encryption, access control, audit logging) must be layered on externally. Reliability degrades as you move up the stack from kernel (deterministic capture) to agent (best-effort async export).
 
 ---
 
