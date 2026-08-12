@@ -52,6 +52,8 @@ How the Linux kernel exposes its behavior — the mechanisms that make OS-level 
 | [lttng-ust.md](02-kernel-tracing/lttng-ust.md) | LTTng-UST | Userspace tracing with no kernel transition on fast path; shared-memory ring buffers |
 | [driver-tracing.md](02-kernel-tracing/driver-tracing.md) | Linux Driver Tracing | Layered driver observability: dev_dbg, dynamic debug, tracepoints, bus tracers |
 | [linux-driver-tracing.md](02-kernel-tracing/linux-driver-tracing.md) | Linux Driver Tracing (extended) | Complete mechanism catalog for driver debugging and observation |
+| [virtualization.md](02-kernel-tracing/virtualization.md) | Virtualization Tracing | Hypervisor pre-emption distorts guest timestamps; KVM/VFIO tracepoints expose stolen time and device passthrough boundaries |
+| [orchestration.md](02-kernel-tracing/orchestration.md) | Container Orchestration Tracing | CFS throttling and cgroup bandwidth limits create timing gaps invisible to application traces; scheduler tracepoints expose the truth |
 
 ### 03 — Hardware Accelerators
 
@@ -72,6 +74,7 @@ Wire-level observation of what goes between processes and machines.
 | Document | Subject | Key Insight |
 |----------|---------|-------------|
 | [wireshark.md](04-network/wireshark.md) | Wireshark | Deep packet inspection with 3000+ protocol dissectors; privilege-separated capture |
+| [mqtt.md](04-network/mqtt.md) | MQTT 5.0 | Lightweight pub/sub messaging: 2-byte wire overhead, QoS 0/1/2 delivery guarantees, session persistence for agent telemetry |
 
 ### 05 — AI Agent Observability
 
