@@ -16,6 +16,7 @@ graph TB
         DD[Datadog LLM Obs]
         TMLL[TMLL / MCP]
         AT[Agent Trace]
+        OCSF[OCSF Security Schema]
     end
 
     subgraph L4["04 - Network"]
@@ -891,6 +892,82 @@ flowchart TD
     TC_DIST --> RESULTS
 ```
 
+### Pattern 5: Security Event Correlation via OCSF
+
+```mermaid
+flowchart TB
+    subgraph Producers["Security Event Producers"]
+        KERN_AUDIT["Kernel Layer\nauditd / LTTng\n(process, file, auth events)"]
+        NET_IDS["Network Layer\nSuricata / Zeek\n(IDS alerts, DNS, flow)"]
+        AGENT_SEC["Agent Layer\nSecurity Scanner\n(prompt injection, tool abuse)"]
+        CLOUD_SEC["Cloud Layer\nGuardDuty / CloudTrail\n(API abuse, lateral movement)"]
+    end
+
+    subgraph Normalize["OCSF Normalization"]
+        MAPPER["Mapper Pipeline\nVendor format → OCSF\ntype_uid composition\nObservable extraction"]
+    end
+
+    subgraph Correlate["Cross-Layer Correlation"]
+        CORR_UID["correlation_uid\n(session-level linking)"]
+        OBSERVABLES["observables[] search\n(IP, hash, domain across layers)"]
+        ACTOR_PID["actor.process.pid\n(kernel ↔ agent binding)"]
+        AI_UID["ai_agent.uid\n(agent identity across events)"]
+    end
+
+    subgraph Consume["Detection & Response"]
+        SIEM["SIEM / Security Lake\n(unified queries over all layers)"]
+        DETECT["Detection Rules\n(type_uid-based routing)"]
+        RESPOND["Automated Response\n(disposition: Block/Quarantine)"]
+    end
+
+    KERN_AUDIT --> MAPPER
+    NET_IDS --> MAPPER
+    AGENT_SEC --> MAPPER
+    CLOUD_SEC --> MAPPER
+    MAPPER --> CORR_UID
+    MAPPER --> OBSERVABLES
+    MAPPER --> ACTOR_PID
+    MAPPER --> AI_UID
+    CORR_UID --> SIEM
+    OBSERVABLES --> SIEM
+    ACTOR_PID --> SIEM
+    AI_UID --> SIEM
+    SIEM --> DETECT
+    DETECT --> RESPOND
+```
+
+**How OCSF correlates the AAIF stack:**
+
+OCSF provides a common schema so that security events from every layer can be queried together without per-vendor translation at analysis time. The correlation keys are:
+
+| Key | What It Links | Example |
+|-----|---------------|---------|
+| `correlation_uid` | All events from same agent session | Agent invocation → tool calls → LLM auth → findings |
+| `observables[].value` | Any event mentioning same indicator | IP in network alert = IP in cloud finding = IP in agent connection |
+| `actor.process.pid` | Agent process across kernel and app layers | auditd syscall event → same PID in OTel span → same PID in OCSF finding |
+| `ai_agent.uid` | All security events for one agent identity | Across runs, restarts, multiple invocations |
+| `type_uid` | Precise event type filtering | 200401 = Detection Finding/Create — same meaning regardless of source |
+| `device.hostname` | All events from same host | Kernel + network + agent events joined by machine |
+
+**Do:**
+- Emit `correlation_uid` matching the OTel `trace_id` for the agent session — this links OCSF security events to performance traces
+- Populate `observables[]` for every finding — this enables indicator-centric search across all event sources
+- Use `ai_agent.uid` consistently across Detection Findings, Authentication events, and API Activity events
+- Apply the `security_control` profile to any event where a security decision was made (allow/block/quarantine)
+- Set `confidence_score` calibrated to actual precision at that threshold
+
+**Don't:**
+- Invent custom event classes when core classes exist — use `type_uid` 99 (Other) activity with sibling string instead
+- Omit `metadata.version` — consumers need this to parse events correctly across schema updates
+- Mix OCSF versions in the same pipeline without version-aware routing
+- Store raw prompts in OCSF events without content redaction — use enrichment pipeline to sanitize first
+- Assume `correlation_uid` propagates automatically — explicitly inject it at the agent runtime level
+
+**Integration with existing patterns:**
+- Pattern 1 (Full-Stack Correlation): OCSF adds the security dimension — same session has both performance traces (OTel) and security findings (OCSF) linked via shared correlation_uid
+- Pattern 2 (Production Monitoring): OCSF Detection Findings feed the alerting pipeline alongside metric thresholds
+- Pattern 3 (AI Agent → Trace Analysis): TMLL anomaly detection results can be emitted as OCSF Detection Findings for downstream SIEM consumption
+
 ---
 
 ## Cross-Layer Synergies
@@ -1179,4 +1256,4 @@ Every technology in this stack is assessed across these dimensions:
 
 ---
 
-*Generated from the AAIF Reference Architecture collection - 21 documents across 5 layers.*
+*Generated from the AAIF Reference Architecture collection - 22 documents across 5 layers.*

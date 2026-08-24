@@ -89,6 +89,7 @@ How AI agents expose their runtime behavior — the application-level telemetry 
 | [AAIF-REF-ARCH-TMLL.md](05-ai-agent-observability/AAIF-REF-ARCH-TMLL.md) | TMLL | ML-enhanced trace analysis via TSP; MCP server exposes anomaly detection to AI agents |
 | [AAIF-REF-ARCH-OTEL.md](05-ai-agent-observability/AAIF-REF-ARCH-OTEL.md) | OpenTelemetry | Vendor-neutral observability framework: traces, metrics, logs with gen_ai.* semantic conventions |
 | [AAIF-REF-ARCH-DATADOG.md](05-ai-agent-observability/AAIF-REF-ARCH-DATADOG.md) | Datadog | Full-stack SaaS platform: LLM Observability with agent/workflow/tool/llm span types |
+| [AAIF-REF-ARCH-OCSF.md](05-ai-agent-observability/AAIF-REF-ARCH-OCSF.md) | OCSF | Vendor-neutral security event schema: 8 categories, type_uid normalization, ai_operation profile for agent security correlation |
 
 ## Cross-Cutting
 
